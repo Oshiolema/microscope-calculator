@@ -1,0 +1,235 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Microscope Size Calculator</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=DM+Serif+Display&family=DM+Mono:wght@400;500&family=Nunito:wght@400;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/static/style.css"/>
+</head>
+<body>
+
+  <header class="top-bar">
+    <div class="top-bar-inner">
+      <span class="scope-icon">🔬</span>
+      <div>
+        <h1 class="site-title">Microscope Size Calculator</h1>
+        <p class="site-tagline">Real-life specimen size from microscope images</p>
+      </div>
+    </div>
+  </header>
+
+  <main class="page-shell">
+
+    <!-- ── CALCULATOR CARD ─────────────────────────────── -->
+    <section class="card calc-card">
+      <h2 class="card-heading">New Calculation</h2>
+
+      <form id="calcForm" enctype="multipart/form-data" novalidate>
+
+        <div class="field-row">
+          <label for="usernameInput" class="field-label">Username</label>
+          <input type="text" id="usernameInput" name="username"
+                 class="text-input" placeholder="Enter your username" autocomplete="off"/>
+        </div>
+
+        <div class="field-row">
+          <label class="field-label">Specimen Image</label>
+          <div class="upload-zone" id="uploadZone">
+            <input type="file" id="imageInput" name="specimen_image"
+                   accept="image/*" class="hidden-file-input"/>
+            <label for="imageInput" class="upload-trigger">
+              <span class="upload-icon">📁</span>
+              <span id="uploadLabel">Click to browse image…</span>
+            </label>
+          </div>
+        </div>
+
+        <div class="field-row">
+          <label for="sizeInput" class="field-label">Measured Size on Image (µm)</label>
+          <input type="number" id="sizeInput" name="measured_size"
+                 class="text-input" placeholder="e.g. 25" min="0.0001" step="any"/>
+        </div>
+
+        <div class="two-col">
+          <div class="field-row">
+            <label for="scopeSelect" class="field-label">Microscope Type</label>
+            <select id="scopeSelect" name="scope_type" class="dropdown-input">
+              {% for scope in scope_options %}
+              <option value="{{ scope }}">{{ scope }}</option>
+              {% endfor %}
+            </select>
+          </div>
+
+          <div class="field-row">
+            <label for="unitSelect" class="field-label">Output Unit</label>
+            <select id="unitSelect" name="output_unit" class="dropdown-input">
+              {% for unit in unit_options %}
+              <option value="{{ unit }}" {% if unit == 'µm' %}selected{% endif %}>{{ unit }}</option>
+              {% endfor %}
+            </select>
+          </div>
+        </div>
+
+        <button type="submit" class="primary-btn" id="calcBtn">
+          Calculate Real Size
+        </button>
+
+      </form>
+
+      <!-- Result panel — hidden until a result comes back -->
+      <div class="result-panel" id="resultPanel" style="display:none;">
+        <h3 class="result-heading">Result</h3>
+        <div class="real-size-display" id="realSizeDisplay"></div>
+        <div class="breakdown-box" id="breakdownBox"></div>
+      </div>
+
+      <div class="error-panel" id="errorPanel" style="display:none;"></div>
+    </section>
+
+    <!-- ── HISTORY CARD ────────────────────────────────── -->
+    <section class="card history-card">
+      <div class="history-header">
+        <h2 class="card-heading">Saved Records</h2>
+        <button class="ghost-btn" id="loadHistoryBtn">Load / Refresh</button>
+      </div>
+
+      <div id="historyTableWrap" style="display:none;">
+        <table class="data-table" id="historyTable">
+          <thead>
+            <tr>
+              <th>ID</th>
+              <th>User</th>
+              <th>Image Size (µm)</th>
+              <th>Real Size</th>
+              <th>Microscope</th>
+              <th>Date &amp; Time</th>
+              <th>Action</th>
+            </tr>
+          </thead>
+          <tbody id="historyBody"></tbody>
+        </table>
+        <p id="noRecordsMsg" style="display:none; text-align:center; color:#bbb; padding:20px;">
+          No records found yet.
+        </p>
+      </div>
+    </section>
+
+  </main>
+
+  <footer class="page-footer">
+    Microscope Size Calculator &nbsp;·&nbsp; Computational Biology Assignment
+  </footer>
+
+  <script>
+    // ── IMAGE UPLOAD LABEL ──────────────────────────────
+    const imageInput  = document.getElementById("imageInput");
+    const uploadLabel = document.getElementById("uploadLabel");
+    imageInput.addEventListener("change", () => {
+      uploadLabel.textContent = imageInput.files[0]
+        ? imageInput.files[0].name
+        : "Click to browse image…";
+    });
+
+    // ── FORM SUBMISSION ─────────────────────────────────
+    const calcForm    = document.getElementById("calcForm");
+    const resultPanel = document.getElementById("resultPanel");
+    const errorPanel  = document.getElementById("errorPanel");
+    const calcBtn     = document.getElementById("calcBtn");
+
+    calcForm.addEventListener("submit", async (evt) => {
+      evt.preventDefault();
+      resultPanel.style.display = "none";
+      errorPanel.style.display  = "none";
+      calcBtn.textContent = "Calculating…";
+      calcBtn.disabled = true;
+
+      const formData = new FormData(calcForm);
+
+      try {
+        const response = await fetch("/calculate", {
+          method: "POST",
+          body: formData
+        });
+        const data = await response.json();
+
+        if (data.success) {
+          document.getElementById("realSizeDisplay").textContent =
+            `${data.final_result} ${data.unit}`;
+
+          const breakdownBox = document.getElementById("breakdownBox");
+          breakdownBox.innerHTML = data.breakdown
+            .map(line => `<p class="breakdown-line">▸ ${line}</p>`)
+            .join("");
+
+          resultPanel.style.display = "block";
+        } else {
+          errorPanel.innerHTML = data.errors.map(e => `<p>⚠ ${e}</p>`).join("");
+          errorPanel.style.display = "block";
+        }
+      } catch (networkErr) {
+        errorPanel.innerHTML = "<p>⚠ Could not reach the server. Please check your connection.</p>";
+        errorPanel.style.display = "block";
+      }
+
+      calcBtn.textContent = "Calculate Real Size";
+      calcBtn.disabled = false;
+    });
+
+    // ── LOAD HISTORY ────────────────────────────────────
+    const loadHistoryBtn    = document.getElementById("loadHistoryBtn");
+    const historyTableWrap  = document.getElementById("historyTableWrap");
+    const historyBody       = document.getElementById("historyBody");
+    const noRecordsMsg      = document.getElementById("noRecordsMsg");
+
+    loadHistoryBtn.addEventListener("click", async () => {
+      loadHistoryBtn.textContent = "Loading…";
+      try {
+        const resp = await fetch("/records");
+        const data = await resp.json();
+        historyBody.innerHTML = "";
+
+        if (data.records.length === 0) {
+          noRecordsMsg.style.display = "block";
+          historyTableWrap.style.display = "block";
+        } else {
+          noRecordsMsg.style.display = "none";
+          historyTableWrap.style.display = "block";
+          data.records.forEach(rec => {
+            const tr = document.createElement("tr");
+            tr.innerHTML = `
+              <td>${rec.record_id}</td>
+              <td>${rec.operator_name}</td>
+              <td>${rec.image_size_um} µm</td>
+              <td>${rec.real_size_value.toFixed(6)} ${rec.real_size_unit}</td>
+              <td>${rec.scope_used}</td>
+              <td>${rec.logged_at}</td>
+              <td><button class="delete-btn" data-id="${rec.record_id}">Delete</button></td>
+            `;
+            historyBody.appendChild(tr);
+          });
+
+          // Attach delete handlers
+          document.querySelectorAll(".delete-btn").forEach(btn => {
+            btn.addEventListener("click", async () => {
+              const rid = btn.dataset.id;
+              if (!confirm(`Delete record #${rid}?`)) return;
+              const delResp = await fetch(`/records/${rid}`, { method: "DELETE" });
+              const delData = await delResp.json();
+              if (delData.success) {
+                btn.closest("tr").remove();
+              } else {
+                alert("Could not delete that record.");
+              }
+            });
+          });
+        }
+      } catch (e) {
+        alert("Failed to load records.");
+      }
+      loadHistoryBtn.textContent = "Load / Refresh";
+    });
+  </script>
+</body>
+</html>
